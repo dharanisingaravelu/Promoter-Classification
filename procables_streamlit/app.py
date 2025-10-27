@@ -29,7 +29,6 @@ def load_artifacts():
     except Exception as e:
         st.error(f"❌ Error loading model or scaler: {e}")
         return None, None
-
 model, scaler = load_artifacts()
 
 if model is None or scaler is None:

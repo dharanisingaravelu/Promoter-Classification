@@ -16,9 +16,6 @@ from tensorflow.keras.layers import (Input, Conv1D, BatchNormalization, Dropout,
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
-# -------------------------
-# Attention block
-# -------------------------
 def attention_block(x, ratio=8):
     channel = int(x.shape[-1])
     shared_dense_one = Dense(max(1, channel // ratio), activation='relu')
@@ -38,9 +35,6 @@ def attention_block(x, ratio=8):
     cbam_feature = tf.keras.layers.Activation('sigmoid')(cbam_feature)
     return Multiply()([x, cbam_feature])
 
-# -------------------------
-# Model builders
-# -------------------------
 def build_cnn_attention(input_shape):
     inputs = Input(shape=input_shape)
     x = Conv1D(128, 7, padding='same', activation='relu')(inputs)
@@ -84,14 +78,8 @@ def build_highacc_cnn_bilstm_attention(input_shape):
                   metrics=['accuracy'])
     return model
 
-# -------------------------
-# Train flow
-# -------------------------
-def train(file_path, outdir="model", mode="strong_weak", n_splits=5, epochs=50, batch_size=32):
-    os.makedirs(outdir, exist_ok=True)
-    print("Loading dataset:", file_path)
+def train(file_path, mode="strong_weak", n_splits=5, epochs=5, batch_size=32):
     data = pd.read_csv(file_path)
-
     if 'class' in data.columns:
         y = data['class'].values
         X = data.drop(columns=['class']).values
@@ -113,12 +101,10 @@ def train(file_path, outdir="model", mode="strong_weak", n_splits=5, epochs=50, 
 
     X_res = X_res.reshape(X_res.shape[0], X_res.shape[1], 1)
     input_shape = (X_res.shape[1], 1)
-    joblib.dump(scaler, os.path.join(outdir, "scaler.joblib"))
+    joblib.dump(scaler, "scaler.joblib")
 
     kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
-    fold = 1
     for train_idx, val_idx in kf.split(X_res, y_res):
-        print(f"Fold {fold}/{n_splits}")
         X_train, X_val = X_res[train_idx], X_res[val_idx]
         y_train, y_val = y_res[train_idx], y_res[val_idx]
         model = model_builder(input_shape)
@@ -126,16 +112,14 @@ def train(file_path, outdir="model", mode="strong_weak", n_splits=5, epochs=50, 
         lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-6)
         model.fit(X_train, y_train, validation_data=(X_val, y_val),
                   epochs=epochs, batch_size=batch_size, callbacks=[es, lr], verbose=2)
-        model.save(os.path.join(outdir, f"model_fold{fold}.h5"))
-        fold += 1
+        model.save("model_final.h5")
+        break
 
-    model.save(os.path.join(outdir, "model_final.h5"))
-    print("Training complete and model saved.")
+    print("✅ Training complete. Saved model_final.h5 and scaler.joblib")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", required=True)
-    parser.add_argument("--outdir", default="model")
+    parser.add_argument("--file", required=True, help="Path to CSV (e.g., 222_vecs.csv or SW_222_vecs.csv)")
     parser.add_argument("--mode", choices=["promoter", "strong_weak"], default="strong_weak")
     args = parser.parse_args()
-    train(args.file, args.outdir, args.mode)
+    train(args.file, args.mode)

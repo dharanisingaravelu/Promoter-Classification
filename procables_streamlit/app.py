@@ -6,21 +6,24 @@ import tensorflow as tf
 import joblib
 import os
 
-MODEL_PATH = "model/model_final.h5"
-SCALER_PATH = "model/scaler.joblib"
+MODEL_PATH = "model_final.h5"
+SCALER_PATH = "scaler.joblib"
 
 st.set_page_config(page_title="PROCABLES Predictor", layout="wide")
 st.title("🔬 PROCABLES: Promoter / Strong-Weak Prediction")
 
 @st.cache_resource
 def load_model_and_scaler():
+    if not os.path.exists(MODEL_PATH) or not os.path.exists(SCALER_PATH):
+        st.error("❌ Model or scaler not found. Please train the model first using train.py")
+        st.stop()
     model = tf.keras.models.load_model(MODEL_PATH)
     scaler = joblib.load(SCALER_PATH)
     return model, scaler
 
 model, scaler = load_model_and_scaler()
 
-st.sidebar.header("Prediction Input Options")
+st.sidebar.header("Input Options")
 option = st.sidebar.radio("Choose Input Method", ["Manual Input", "Upload CSV"])
 
 def make_prediction(data):
@@ -32,7 +35,7 @@ def make_prediction(data):
 
 if option == "Manual Input":
     st.write("### Enter feature values manually:")
-    num_features = st.number_input("Number of features", min_value=1, step=1, value=10)
+    num_features = st.number_input("Number of features", min_value=1, value=10, step=1)
     values = []
     cols = st.columns(5)
     for i in range(num_features):
@@ -50,7 +53,6 @@ elif option == "Upload CSV":
     uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
     if uploaded_file:
         df = pd.read_csv(uploaded_file)
-        st.write("Preview of data:")
         st.dataframe(df.head())
         if st.button("Predict All"):
             preds, probs = make_prediction(df.values)

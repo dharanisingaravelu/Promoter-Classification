@@ -1,65 +1,89 @@
-# app.py
 import streamlit as st
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import joblib
-import os
+import tensorflow as tf
+from tensorflow.keras.models import load_model
 
-MODEL_PATH = "model_final.h5"
-SCALER_PATH = "scaler.joblib"
+# -------------------------------------------------------
+# ⚙️ Page Configuration
+# -------------------------------------------------------
+st.set_page_config(
+    page_title="PROCABLES: Promoter / Strong-Weak Prediction",
+    page_icon="🔬",
+    layout="wide"
+)
 
-st.set_page_config(page_title="PROCABLES Predictor", layout="wide")
 st.title("🔬 PROCABLES: Promoter / Strong-Weak Prediction")
+st.markdown("---")
 
+# -------------------------------------------------------
+# 🧩 Load model and scaler
+# -------------------------------------------------------
 @st.cache_resource
-def load_model_and_scaler():
-    if not os.path.exists(MODEL_PATH) or not os.path.exists(SCALER_PATH):
-        st.error("❌ Model or scaler not found. Please train the model first using train.py")
-        st.stop()
-    model = tf.keras.models.load_model(MODEL_PATH)
-    scaler = joblib.load(SCALER_PATH)
-    return model, scaler
+def load_artifacts():
+    try:
+        model = load_model("model_final.h5", compile=False)
+        scaler = joblib.load("scaler.joblib")
+        return model, scaler
+    except Exception as e:
+        st.error(f"❌ Error loading model or scaler: {e}")
+        return None, None
 
-model, scaler = load_model_and_scaler()
+model, scaler = load_artifacts()
 
-st.sidebar.header("Input Options")
-option = st.sidebar.radio("Choose Input Method", ["Manual Input", "Upload CSV"])
+if model is None or scaler is None:
+    st.warning("⚠️ Model or scaler not found. Please ensure `model_final.h5` and `scaler.joblib` are in the same folder as this app.")
+    st.stop()
 
-def make_prediction(data):
-    X_scaled = scaler.transform(data)
-    X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
-    probs = model.predict(X_scaled).ravel()
-    preds = (probs > 0.5).astype(int)
-    return preds, probs
+st.success("✅ Model and scaler loaded successfully!")
 
-if option == "Manual Input":
-    st.write("### Enter feature values manually:")
-    num_features = st.number_input("Number of features", min_value=1, value=10, step=1)
-    values = []
-    cols = st.columns(5)
-    for i in range(num_features):
-        col = cols[i % 5]
-        val = col.number_input(f"f{i+1}", value=0.0, step=0.01)
-        values.append(val)
-    if st.button("Predict"):
-        arr = np.array([values])
-        preds, probs = make_prediction(arr)
-        st.success(f"Prediction: {'Positive (1)' if preds[0]==1 else 'Negative (0)'}")
-        st.info(f"Probability: {probs[0]:.4f}")
+# -------------------------------------------------------
+# 📂 File Upload Section
+# -------------------------------------------------------
+st.header("📁 Upload Your Input CSV File")
+uploaded_file = st.file_uploader("Upload your feature CSV (with or without 'class' column)", type=["csv"])
 
-elif option == "Upload CSV":
-    st.write("### Upload a CSV file containing only feature columns:")
-    uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        st.dataframe(df.head())
-        if st.button("Predict All"):
-            preds, probs = make_prediction(df.values)
-            result = df.copy()
-            result["Prediction"] = preds
-            result["Probability"] = probs
-            st.success("✅ Predictions complete!")
-            st.dataframe(result.head())
-            csv = result.to_csv(index=False).encode("utf-8")
-            st.download_button("Download Results", csv, "predictions.csv", "text/csv")
+if uploaded_file is not None:
+    try:
+        data = pd.read_csv(uploaded_file)
+        st.write("### Preview of Uploaded Data:")
+        st.dataframe(data.head())
+
+        if 'class' in data.columns:
+            X = data.drop(columns=['class']).values
+        else:
+            X = data.values
+
+        # Apply the same scaling as used during training
+        X_scaled = scaler.transform(X)
+        X_scaled = X_scaled.reshape(X_scaled.shape[0], X_scaled.shape[1], 1)
+
+        # -------------------------------------------------------
+        # 🔮 Make Predictions
+        # -------------------------------------------------------
+        preds = model.predict(X_scaled)
+        preds_binary = (preds > 0.5).astype(int)
+
+        # Attach predictions to dataframe
+        data['Predicted_Class'] = preds_binary
+        data['Predicted_Probability'] = preds
+
+        st.markdown("### ✅ Prediction Results:")
+        st.dataframe(data.head())
+
+        # -------------------------------------------------------
+        # 📥 Download Results
+        # -------------------------------------------------------
+        csv = data.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="⬇️ Download Predictions as CSV",
+            data=csv,
+            file_name="predictions.csv",
+            mime="text/csv",
+        )
+
+    except Exception as e:
+        st.error(f"❌ Error processing the uploaded file: {e}")
+else:
+    st.info("👆 Please upload a CSV file to begin prediction.")
